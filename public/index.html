@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Chess Analyzer (Static)</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Chess Analyzer (Static)</h1>
+      <div class="controls">
+        <label><input id="themeToggle" type="checkbox"> Dark</label>
+      </div>
+    </header>
+
+    <section class="row">
+      <div class="col">
+        <h3>Import from chess.com</h3>
+        <input id="username" placeholder="username" />
+        <button id="importBtn">Import latest archive</button>
+      </div>
+      <div class="col">
+        <h3>Or paste PGN</h3>
+        <textarea id="pgn" rows="10" placeholder="Paste PGN here"></textarea>
+        <button id="analyzeBtn">Analyze PGN</button>
+      </div>
+    </section>
+
+    <section id="result" class="result" hidden>
+      <h3>Moves</h3>
+      <table id="movesTable">
+        <thead>
+          <tr><th>#</th><th>SAN</th><th>FEN</th><th>Eval</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <div id="message" class="message"></div>
+
+    <footer>
+      <small>Static page that calls the local Next.js API endpoints (/api/fetch and /api/analyze). Start the dev server for full functionality.</small>
+    </footer>
+  </div>
+
+  <script>
+    const apiFetch = (path, body) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+
+    const el = id => document.getElementById(id)
+    const showMessage = (txt, isError=false) => { const m = el('message'); m.textContent = txt; m.style.color = isError ? 'var(--accent-red)' : 'inherit'; }
+
+    async function importFromChess() {
+      const username = el('username').value.trim()
+      if (!username) return showMessage('Enter username', true)
+      showMessage('Fetching...')
+      try {
+        const res = await apiFetch('/api/fetch', { username })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Import failed')
+        const g = data.games && data.games[0]
+        if (!g) throw new Error('No games in archive')
+        el('pgn').value = g.pgn
+        showMessage('Imported first game from archive')
+        analyzePgn()
+      } catch (err) {
+        showMessage(err.message || String(err), true)
+      }
+    }
+
+    async function analyzePgn() {
+      const pgn = el('pgn').value
+      if (!pgn) return showMessage('Paste PGN first', true)
+      showMessage('Analyzing...')
+      try {
+        const res = await apiFetch('/api/analyze', { pgn })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Analysis failed')
+        renderMoves(data.moves)
+        showMessage('Analysis complete')
+      } catch (err) {
+        showMessage(err.message || String(err), true)
+      }
+    }
+
+    function renderMoves(moves) {
+      const tbody = el('movesTable').querySelector('tbody')
+      tbody.innerHTML = ''
+      moves.forEach((m, i) => {
+        const tr = document.createElement('tr')
+        tr.innerHTML = `<td>${m.moveNumber}</td><td>${m.san}</td><td><code>${m.fen}</code></td><td>${m.eval ?? '—'}</td>`
+        tbody.appendChild(tr)
+      })
+      el('result').hidden = false
+    }
+
+    // theme
+    const themeToggle = el('themeToggle')
+    const initTheme = () => {
+      const t = localStorage.getItem('theme') || 'light'
+      document.documentElement.setAttribute('data-theme', t)
+      themeToggle.checked = t === 'dark'
+    }
+    themeToggle.addEventListener('change', () => {
+      const t = themeToggle.checked ? 'dark' : 'light'
+      document.documentElement.setAttribute('data-theme', t)
+      localStorage.setItem('theme', t)
+    })
+
+    el('importBtn').addEventListener('click', importFromChess)
+    el('analyzeBtn').addEventListener('click', analyzePgn)
+
+    initTheme()
+  </script>
+</body>
+</html>
