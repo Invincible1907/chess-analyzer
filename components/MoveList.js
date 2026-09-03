@@ -6,8 +6,8 @@ export default function MoveList({ moves = [], onSelect = () => {}, selectedInde
       {moves.map((m, i) => (
         <div key={i} className={`move-row ${selectedIndex === i ? 'selected' : ''}`} onClick={() => onSelect(i)}>
           <div style={{ width: 36, textAlign: 'right', color: 'var(--muted)' }}>{m.moveNumber}</div>
-          <div className="move-name"><strong>{m.san}</strong><small>{m.bestMoveSan && !m.isBest ? `Best: ${m.bestMoveSan}` : m.isBest ? 'Best move' : 'Engine unavailable'}</small></div>
-          <div className="eval-badge">{m.accuracy ?? '—'}{m.accuracy !== null && m.accuracy !== undefined ? '%' : ''}</div>
+          <div className="move-name"><strong>{m.san}</strong><small>{m.moment || 'Position reviewed'}</small></div>
+          <div className="eval-badge">{m.eval ?? '0.0'}</div>
         </div>
       ))}
     </div>

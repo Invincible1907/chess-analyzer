@@ -1,104 +1,18 @@
 import { Chess } from 'chess.js'
 
-const createStockfish = require('stockfish')
-let engineQueue = Promise.resolve()
-let enginePromise = null
+const pieceValues = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 }
 
-function getEngine() {
-  if (!enginePromise) enginePromise = createStockfish('asm')
-  return enginePromise
+function materialScore(game) {
+  return game.board().reduce((score, row) => row.reduce((total, piece) => {
+    if (!piece) return total
+    const value = pieceValues[piece.type]
+    return total + (piece.color === 'w' ? value : -value)
+  }, score), 0)
 }
 
-function parseScore(line) {
-  const match = line.match(/score (cp|mate) (-?\d+)/)
-  if (!match) return null
-  return { type: match[1], value: Number.parseInt(match[2], 10) }
-}
-
-function scoreToCp(score) {
-  if (!score) return null
-  return score.type === 'mate' ? Math.sign(score.value || 1) * 10000 : score.value
-}
-
-function analyzePosition(engine, fen) {
-  return new Promise((resolve) => {
-    let score = null
-    let bestMove = null
-    let settled = false
-    const originalWrite = process.stdout.write
-    const finish = () => {
-      if (settled) return
-      settled = true
-      clearTimeout(timeout)
-      process.stdout.write = originalWrite
-      resolve({ score, bestMove })
-    }
-    const timeout = setTimeout(finish, 8000)
-    const captureLine = (line) => {
-      if (typeof line !== 'string') return
-      const parsed = parseScore(line)
-      if (parsed) score = parsed
-      if (line.startsWith('bestmove')) {
-        bestMove = line.split(/\s+/)[1] || null
-        finish()
-      }
-    }
-    process.stdout.write = (chunk, ...args) => {
-      const line = String(chunk).trim()
-      if (/^(info |bestmove |id |option |uciok$|Stockfish )/.test(line)) captureLine(line)
-      else return originalWrite.call(process.stdout, chunk, ...args)
-      return true
-    }
-    engine.print = captureLine
-    engine.sendCommand(`position fen ${fen}`)
-    engine.sendCommand('go depth 5')
-  })
-}
-
-async function analyzeMoves(moves) {
-  let engine
-  try {
-    engine = await getEngine()
-    engine.sendCommand('uci')
-    await new Promise((resolve) => setTimeout(resolve, 100))
-
-    const replay = new Chess()
-    const positions = [replay.fen()]
-    for (const move of moves) {
-      replay.move(move.san)
-      positions.push(replay.fen())
-    }
-    const evaluations = []
-    for (const fen of positions) evaluations.push(await analyzePosition(engine, fen))
-
-    const analyzed = moves.map((move, index) => {
-      const engineBefore = evaluations[index]
-      const engineAfter = evaluations[index + 1]
-      const beforeFen = positions[index]
-      const position = new Chess(beforeFen)
-      const legalMoves = position.moves({ verbose: true })
-      const playedMove = legalMoves.find((candidate) => candidate.san === move.san)
-      const beforeCp = scoreToCp(engineBefore.score)
-      const afterCpForMover = scoreToCp(engineAfter.score) === null ? null : -scoreToCp(engineAfter.score)
-      const centipawnLoss = beforeCp === null || afterCpForMover === null ? null : Math.max(0, beforeCp - afterCpForMover)
-      const accuracy = centipawnLoss === null ? null : Math.max(0, Math.min(100, Math.round(100 - centipawnLoss / 8)))
-      let bestMoveSan = engineBefore.bestMove
-      if (engineBefore.bestMove) {
-        const bestCandidate = legalMoves.find((candidate) => `${candidate.from}${candidate.to}${candidate.promotion || ''}` === engineBefore.bestMove)
-        bestMoveSan = bestCandidate?.san || engineBefore.bestMove
-      }
-      return { ...move, bestMove: engineBefore.bestMove, bestMoveSan, eval: engineAfter.score ? (engineAfter.score.type === 'mate' ? `M${engineAfter.score.value}` : (scoreToCp(engineAfter.score) / 100).toFixed(2)) : null, accuracy, centipawnLoss, isBest: Boolean(playedMove && engineBefore.bestMove === `${playedMove.from}${playedMove.to}${playedMove.promotion || ''}`) }
-    })
-    return analyzed
-  } catch (error) {
-    return moves
-  }
-}
-
-function analyzeMovesSerially(moves) {
-  const job = engineQueue.then(() => analyzeMoves(moves))
-  engineQueue = job.catch(() => undefined)
-  return job
+function formatScore(score) {
+  if (score === 0) return '0.0'
+  return `${score > 0 ? '+' : ''}${score.toFixed(1)}`
 }
 
 export default async function handler(req, res) {
@@ -116,18 +30,48 @@ export default async function handler(req, res) {
     else if (typeof parser.load_pgn === 'function') parser.load_pgn(pgn)
     else return res.status(500).json({ error: 'chess.js API mismatch on server' })
 
-    const allMoves = parser.history()
+    const sans = parser.history()
     const replay = new Chess()
-    const parsedMoves = allMoves.map((san, index) => {
-      replay.move(san)
-      return { moveNumber: Math.ceil((index + 1) / 2), san, fen: replay.fen() }
+    let previousScore = 0
+    let captures = 0
+    let checks = 0
+    let sacrifices = 0
+    const moves = sans.map((san, index) => {
+      const played = replay.move(san)
+      const score = materialScore(replay)
+      const capturedValue = played.captured ? pieceValues[played.captured] : 0
+      if (capturedValue) captures += 1
+      if (played.san.includes('+') || played.san.includes('#')) checks += 1
+      const swing = score - previousScore
+      if (capturedValue && swing < -capturedValue + 0.5) sacrifices += 1
+      previousScore = score
+      return {
+        moveNumber: Math.ceil((index + 1) / 2),
+        san,
+        fen: replay.fen(),
+        eval: formatScore(score),
+        materialScore: score,
+        captured: played.captured || null,
+        isCheck: played.san.includes('+') || played.san.includes('#'),
+        moment: played.san.includes('#') ? 'Checkmate' : played.san.includes('+') ? 'Check' : capturedValue ? `Captured ${played.captured}` : null
+      }
     })
-    const moves = await analyzeMovesSerially(parsedMoves)
-    const ratedMoves = moves.filter((move) => typeof move.accuracy === 'number')
-    const accuracy = ratedMoves.length ? Math.round(ratedMoves.reduce((sum, move) => sum + move.accuracy, 0) / ratedMoves.length) : null
-    const performanceRating = accuracy === null ? null : Math.round(800 + accuracy * 16)
-    const bestMoves = moves.filter((move) => move.isBest).length
-    return res.status(200).json({ moves, review: { accuracy, performanceRating, bestMoves, analyzedMoves: ratedMoves.length } })
+
+    return res.status(200).json({
+      moves,
+      review: {
+        mode: 'quick',
+        accuracy: null,
+        performanceRating: null,
+        bestMoves: 0,
+        analyzedMoves: moves.length,
+        captures,
+        checks,
+        sacrifices,
+        keyMoments: moves.filter((move) => move.moment).length,
+        materialScore: previousScore
+      }
+    })
   } catch (err) {
     console.error(err)
     return res.status(400).json({ error: 'Failed to parse PGN', detail: String(err) })
