@@ -5,7 +5,7 @@ let engineQueue = Promise.resolve()
 let enginePromise = null
 
 function getEngine() {
-  if (!enginePromise) enginePromise = createStockfish('lite-single')
+  if (!enginePromise) enginePromise = createStockfish('asm')
   return enginePromise
 }
 
@@ -51,7 +51,7 @@ function analyzePosition(engine, fen) {
     }
     engine.print = captureLine
     engine.sendCommand(`position fen ${fen}`)
-    engine.sendCommand('go depth 8')
+    engine.sendCommand('go depth 5')
   })
 }
 
@@ -62,15 +62,22 @@ async function analyzeMoves(moves) {
     engine.sendCommand('uci')
     await new Promise((resolve) => setTimeout(resolve, 100))
 
-    const analyzed = []
     const replay = new Chess()
+    const positions = [replay.fen()]
     for (const move of moves) {
-      const beforeFen = replay.fen()
-      const legalMoves = replay.moves({ verbose: true })
-      const engineBefore = await analyzePosition(engine, beforeFen)
-      const playedMove = legalMoves.find((candidate) => candidate.san === move.san)
       replay.move(move.san)
-      const engineAfter = await analyzePosition(engine, replay.fen())
+      positions.push(replay.fen())
+    }
+    const evaluations = []
+    for (const fen of positions) evaluations.push(await analyzePosition(engine, fen))
+
+    const analyzed = moves.map((move, index) => {
+      const engineBefore = evaluations[index]
+      const engineAfter = evaluations[index + 1]
+      const beforeFen = positions[index]
+      const position = new Chess(beforeFen)
+      const legalMoves = position.moves({ verbose: true })
+      const playedMove = legalMoves.find((candidate) => candidate.san === move.san)
       const beforeCp = scoreToCp(engineBefore.score)
       const afterCpForMover = scoreToCp(engineAfter.score) === null ? null : -scoreToCp(engineAfter.score)
       const centipawnLoss = beforeCp === null || afterCpForMover === null ? null : Math.max(0, beforeCp - afterCpForMover)
@@ -80,11 +87,10 @@ async function analyzeMoves(moves) {
         const bestCandidate = legalMoves.find((candidate) => `${candidate.from}${candidate.to}${candidate.promotion || ''}` === engineBefore.bestMove)
         bestMoveSan = bestCandidate?.san || engineBefore.bestMove
       }
-      analyzed.push({ ...move, bestMove: engineBefore.bestMove, bestMoveSan, eval: engineAfter.score ? (engineAfter.score.type === 'mate' ? `M${engineAfter.score.value}` : (scoreToCp(engineAfter.score) / 100).toFixed(2)) : null, accuracy, centipawnLoss, isBest: Boolean(playedMove && engineBefore.bestMove === `${playedMove.from}${playedMove.to}${playedMove.promotion || ''}`) })
-    }
+      return { ...move, bestMove: engineBefore.bestMove, bestMoveSan, eval: engineAfter.score ? (engineAfter.score.type === 'mate' ? `M${engineAfter.score.value}` : (scoreToCp(engineAfter.score) / 100).toFixed(2)) : null, accuracy, centipawnLoss, isBest: Boolean(playedMove && engineBefore.bestMove === `${playedMove.from}${playedMove.to}${playedMove.promotion || ''}`) }
+    })
     return analyzed
   } catch (error) {
-    try { engine?.sendCommand('quit') } catch (ignored) {}
     return moves
   }
 }
