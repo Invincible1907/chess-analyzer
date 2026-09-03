@@ -2,6 +2,12 @@ import { Chess } from 'chess.js'
 
 const createStockfish = require('stockfish')
 let engineQueue = Promise.resolve()
+let enginePromise = null
+
+function getEngine() {
+  if (!enginePromise) enginePromise = createStockfish('lite-single')
+  return enginePromise
+}
 
 function parseScore(line) {
   const match = line.match(/score (cp|mate) (-?\d+)/)
@@ -45,14 +51,14 @@ function analyzePosition(engine, fen) {
     }
     engine.print = captureLine
     engine.sendCommand(`position fen ${fen}`)
-    engine.sendCommand('go depth 10')
+    engine.sendCommand('go depth 8')
   })
 }
 
 async function analyzeMoves(moves) {
   let engine
   try {
-    engine = await createStockfish('lite-single')
+    engine = await getEngine()
     engine.sendCommand('uci')
     await new Promise((resolve) => setTimeout(resolve, 100))
 
@@ -76,7 +82,6 @@ async function analyzeMoves(moves) {
       }
       analyzed.push({ ...move, bestMove: engineBefore.bestMove, bestMoveSan, eval: engineAfter.score ? (engineAfter.score.type === 'mate' ? `M${engineAfter.score.value}` : (scoreToCp(engineAfter.score) / 100).toFixed(2)) : null, accuracy, centipawnLoss, isBest: Boolean(playedMove && engineBefore.bestMove === `${playedMove.from}${playedMove.to}${playedMove.promotion || ''}`) })
     }
-    engine.sendCommand('quit')
     return analyzed
   } catch (error) {
     try { engine?.sendCommand('quit') } catch (ignored) {}

@@ -12,7 +12,7 @@ export default function ChessBoard({ moves = [], selectedIndex = 0, editMode = f
 
   useEffect(() => {
     setIndex(0)
-    setPosition(initialPosition)
+    setPosition(editMode ? initialPosition : startFen)
   }, [moves, initialPosition, editMode])
 
   useEffect(() => {
