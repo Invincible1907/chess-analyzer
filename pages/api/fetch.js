@@ -21,15 +21,15 @@ export default async function handler(req, res) {
     if (archives.length === 0) return res.status(200).json({ games: [] })
 
     let games = []
-    for (const archive of archives.slice().reverse()) {
+    for (const archive of archives.slice().reverse().slice(0, 3)) {
       const archiveRes = await axios.get(archive, requestOptions)
-      games = (archiveRes.data.games || [])
+      const archiveGames = (archiveRes.data.games || [])
         .filter(g => typeof g.pgn === 'string' && g.pgn.trim())
         .map(g => ({ url: g.url, pgn: g.pgn, white: g.white, black: g.black }))
-      if (games.length > 0) break
+      games = games.concat(archiveGames)
     }
 
-    return res.status(200).json({ games })
+    return res.status(200).json({ games: games.slice(0, 30) })
   } catch (err) {
     console.error(err)
     if (err.response?.status === 404) return res.status(404).json({ error: 'Chess.com username not found' })
