@@ -19,6 +19,7 @@ function gameDate(game) {
 export default function Home() {
   const [pgn, setPgn] = useState(starterPgn)
   const [moves, setMoves] = useState(null)
+  const [review, setReview] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [username, setUsername] = useState('')
@@ -50,11 +51,13 @@ export default function Home() {
       if (!response.ok) throw new Error(data.error || 'Analysis failed')
       setPgn(nextPgn)
       setMoves(data.moves)
+      setReview(data.review || null)
       setSelectedIndex(0)
       setActiveView('review')
     } catch (err) {
       setError(err.message)
       setMoves(null)
+      setReview(null)
     } finally {
       setLoading(false)
     }
@@ -88,6 +91,7 @@ export default function Home() {
   function startEditor() {
     setActiveView('editor')
     setMoves(null)
+    setReview(null)
     setError(null)
   }
 
@@ -126,8 +130,8 @@ export default function Home() {
           <div className="review-panel">
             <div className="tab-row"><button className="tab active">Overview</button><button className="tab" onClick={() => setActiveView('review')}>Moves</button><button className="tab">Details</button></div>
             {activeView === 'review' ? <>
-              <div className="review-intro"><p className="eyebrow">GAME REVIEW</p><h2>{moves ? 'Your game is ready.' : 'Bring a game to the board.'}</h2><p>{moves ? 'Step through every move and inspect the position after it.' : 'Paste a PGN or choose a game from your chess.com history.'}</p></div>
-              <div className="stat-grid"><div className="stat-card"><span>Moves</span><strong>{moveCount || '--'}</strong><small>{moves ? 'played' : 'waiting'}</small></div><div className="stat-card"><span>Opening</span><strong>{moves ? 'Ready' : '--'}</strong><small>{moves ? 'position loaded' : 'not detected'}</small></div><div className="stat-card"><span>Review</span><strong>{moves ? 'Live' : '--'}</strong><small>{moves ? 'move by move' : 'start analysis'}</small></div></div>
+              <div className="review-intro"><p className="eyebrow">GAME REVIEW</p><h2>{moves ? 'Your game is ready.' : 'Bring a game to the board.'}</h2><p>{moves ? 'Step through every move and inspect the position after it.' : 'Paste a PGN or choose a game from your chess.com history.'}</p><textarea className="pgn-input" value={pgn} onChange={(event) => setPgn(event.target.value)} placeholder="Paste PGN here" rows={3} /><button className="button-primary analyze-button" onClick={() => analyzePgn()} disabled={loading}>{loading ? 'Analyzing...' : 'Analyze PGN'}</button></div>
+              <div className="stat-grid"><div className="stat-card"><span>Performance</span><strong>{review?.performanceRating || '--'}</strong><small>{review ? 'estimated rating' : 'waiting'}</small></div><div className="stat-card"><span>Accuracy</span><strong>{review?.accuracy ? `${review.accuracy}%` : '--'}</strong><small>{review ? `${review.bestMoves} best moves` : 'not analyzed'}</small></div><div className="stat-card"><span>Moves</span><strong>{moveCount || '--'}</strong><small>{moves ? 'engine reviewed' : 'waiting'}</small></div></div>
               <div className="opening-line"><span>Opening sequence</span><code>{opening}</code></div>
               <div className="move-list-wrap"><div className="section-title"><span>Moves</span><span>{moveCount ? `${moveCount} plies` : 'No game loaded'}</span></div>{moves ? <MoveList moves={moves} onSelect={setSelectedIndex} selectedIndex={selectedIndex} /> : <div className="empty-state">Your move list will appear here after analysis.</div>}</div>
             </> : <div className="editor-copy"><p className="eyebrow">BOARD EDITOR</p><h2>Build a position.</h2><p>Choose a piece, click a square to place it, or drag pieces directly on the board.</p></div>}
