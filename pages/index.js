@@ -11,6 +11,11 @@ function gameLabel(game, index) {
   return `${white} vs ${black} ${index + 1}`
 }
 
+function gameDate(game) {
+  if (!game.endTime) return 'Recent game'
+  return new Date(game.endTime * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 export default function Home() {
   const [pgn, setPgn] = useState(starterPgn)
   const [moves, setMoves] = useState(null)
@@ -133,7 +138,7 @@ export default function Home() {
           <div className="section-heading"><div><p className="eyebrow">CHESS.COM CONNECT</p><h2>Recent games</h2></div><span className="section-hint">Import your latest games to review them here.</span></div>
           <div className="import-bar"><div className="username-field"><span>@</span><input value={username} onChange={(event) => setUsername(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && importHistory()} placeholder="chess.com username" /></div><button className="button-primary" onClick={importHistory} disabled={loading}>{loading ? 'Loading...' : 'Load game history'}</button></div>
           {error && <div className="error-message" role="alert">{error}</div>}
-          <div className="history-section">{history.length ? history.map((game, index) => <button className="history-card" key={`${game.url || index}-${index}`} onClick={() => openGame(game)}><span className="history-result">{index % 3 === 0 ? 'REVIEW' : 'GAME'}</span><strong>{gameLabel(game, index)}</strong><small>{game.white?.rating || ''} {game.white?.rating ? ' vs ' : ''} {game.black?.rating || ''}</small><span className="history-arrow">&rarr;</span></button>) : <div className="history-empty">Enter a username to see up to 30 recent games.</div>}</div>
+          <div className="history-section">{history.length ? history.map((game, index) => <button className="history-card" key={`${game.url || index}-${index}`} onClick={() => openGame(game)}><span className="history-result">{gameDate(game)}</span><strong>{gameLabel(game, index)}</strong><small>{game.result || 'Game'} {game.white?.rating ? ` / ${game.white.rating} vs ${game.black?.rating || '?'}` : ''}</small><span className="history-arrow">&rarr;</span></button>) : <div className="history-empty">Enter a username to see up to 30 recent games.</div>}</div>
         </section>
 
         <footer className="footer"><span>CHESSLAB</span><span>Built for thoughtful analysis</span></footer>
